@@ -1,10 +1,12 @@
 
 import React, { useState, useEffect } from 'react';
-import { Trophy, Star, Sparkles, User as UserIcon, Plus, ChevronLeft, LayoutDashboard, Settings, Trash2, UserPlus, ShieldAlert, Lock, Unlock } from 'lucide-react';
+import { Trophy, Star, Sparkles, User as UserIcon, Plus, ChevronLeft, LayoutDashboard, Settings, Trash2, UserPlus, ShieldAlert, Lock, Unlock, MessageSquareQuote, Wand2, Loader2 } from 'lucide-react';
 import { INITIAL_USERS, CATEGORY_LABELS, CATEGORY_COLORS } from './constants';
 import { User, Rating, RatingCategory } from './types';
+import { GoogleGenAI } from "@google/genai";
 
-// Helper to get a consistent color based on name
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+
 const getNameColor = (name: string) => {
   const colors = [
     'bg-pink-400', 'bg-yellow-400', 'bg-blue-400', 'bg-green-400', 
@@ -80,22 +82,54 @@ const App: React.FC = () => {
   const [activeRatingTarget, setActiveRatingTarget] = useState<User | null>(null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [adminPasswordInput, setAdminPasswordInput] = useState('');
+  const [weeklySummary, setWeeklySummary] = useState<{ [key: string]: string }>({});
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
 
   useEffect(() => {
     const savedRatings = localStorage.getItem('sadeeqi_ratings');
     if (savedRatings) setRatings(JSON.parse(savedRatings));
+    const savedSummaries = localStorage.getItem('sadeeqi_summaries');
+    if (savedSummaries) setWeeklySummary(JSON.parse(savedSummaries));
   }, []);
 
   useEffect(() => {
     localStorage.setItem('sadeeqi_ratings', JSON.stringify(ratings));
-  }, [ratings]);
+    localStorage.setItem('sadeeqi_summaries', JSON.stringify(weeklySummary));
+  }, [ratings, weeklySummary]);
 
   useEffect(() => {
     localStorage.setItem('sadeeqi_users', JSON.stringify(users));
   }, [users]);
 
-  // Use "عبدو" as the session user
   const sessionUser = users.find(u => u.name === 'عبدو') || users[0] || { id: '0', name: 'زائر', handle: '@guest', points: 0, avatar: '' };
+
+  const generateAISummary = async (user: User) => {
+    setIsGeneratingSummary(true);
+    const userRatings = ratings.filter(r => r.toUserId === user.id);
+    
+    if (userRatings.length === 0) {
+      alert("نحتاج لتقييمات أولاً لنصنع له ملخصاً مضحكاً! 😂");
+      setIsGeneratingSummary(false);
+      return;
+    }
+
+    const ratingsText = userRatings.map(r => `[${CATEGORY_LABELS[r.category]}]: ${r.content}`).join('\n');
+    
+    try {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: `أنت الآن "خبير تحفيل" مصري كوميدي. قمت بتحليل هذه التقييمات لصديق اسمه ${user.name}:\n${ratingsText}\nاكتب خلاصة أسبوعية ساخرة وكوميدية جداً (حوالي 3-4 جمل) بلهجة مصرية مرحة، تسخر من عيوبه بشكل خفيف وتمدح مميزاته بطريقة مضحكة. ابدأ بعبارة مثل "يا عيني عليك يا ${user.name}..." أو "أبشر يا بطل...". استخدم الإيموجي بكثرة.`,
+      });
+
+      const text = response.text || "حدث خطأ في توليد الملخص، جرب مرة أخرى!";
+      setWeeklySummary(prev => ({ ...prev, [user.id]: text }));
+    } catch (error) {
+      console.error(error);
+      alert("عذراً، الذكاء الاصطناعي أخذ استراحة! حاول مجدداً.");
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
 
   const handleRate = (target: User) => {
     setActiveRatingTarget(target);
@@ -150,9 +184,7 @@ const App: React.FC = () => {
   };
 
   const handleAdminLogin = () => {
-    const normalizedInput = adminPasswordInput.trim();
-    
-    if (normalizedInput === 'عبدو عمك') {
+    if (adminPasswordInput.trim() === 'عبدو عمك') {
       setIsAdminAuthenticated(true);
       setAdminPasswordInput('');
     } else {
@@ -231,13 +263,24 @@ const App: React.FC = () => {
           </button>
         </div>
 
-        <div className="bg-white cartoon-border cartoon-shadow p-6 rounded-3xl text-center">
+        <div className="bg-white cartoon-border cartoon-shadow p-6 rounded-3xl text-center relative overflow-hidden">
           <div className="flex justify-center mb-4">
             <LetterAvatar name={user.name} size="xl" />
           </div>
           <h2 className="text-3xl font-black">{user.name}</h2>
-          <p className="text-gray-500">{user.handle}</p>
-          <div className="flex justify-center gap-4 mt-6">
+          <p className="text-gray-500 mb-6">{user.handle}</p>
+
+          {weeklySummary[user.id] && (
+            <div className="bg-purple-100 cartoon-border p-4 rounded-2xl mb-6 relative animate-in zoom-in duration-300">
+              <MessageSquareQuote className="absolute -top-3 -right-3 text-purple-600 bg-white rounded-full p-1 border-2 border-black" size={32} />
+              <p className="text-sm font-bold text-purple-900 leading-relaxed italic text-right">
+                "{weeklySummary[user.id]}"
+              </p>
+              <div className="mt-2 text-[10px] font-black text-purple-500 uppercase tracking-widest">تحفيل الأسبوع بواسطة AI 🤖</div>
+            </div>
+          )}
+
+          <div className="flex justify-center gap-4">
             <div className="bg-green-100 p-4 rounded-2xl cartoon-border flex-1">
               <span className="block font-black text-2xl">{userRatings.filter(r => r.category === 'PRO').length}</span>
               <span className="text-xs font-bold text-green-700">مميزات</span>
@@ -247,18 +290,31 @@ const App: React.FC = () => {
               <span className="text-xs font-bold text-red-700">عيوب</span>
             </div>
           </div>
-          <button 
-            onClick={() => handleRate(user)}
-            className="w-full mt-6 bg-yellow-400 cartoon-border cartoon-shadow py-4 rounded-2xl font-black text-xl hover:scale-105 active:scale-95 transition-transform flex items-center justify-center gap-2"
-          >
-            <Plus /> قيم {user.name} الآن!
-          </button>
+          
+          <div className="grid grid-cols-2 gap-3 mt-6">
+             <button 
+              onClick={() => handleRate(user)}
+              className="bg-yellow-400 cartoon-border cartoon-shadow py-4 rounded-2xl font-black text-lg hover:scale-105 active:scale-95 transition-transform flex items-center justify-center gap-2"
+            >
+              <Plus size={20} /> قيّم
+            </button>
+            <button 
+              onClick={() => generateAISummary(user)}
+              disabled={isGeneratingSummary}
+              className="bg-purple-500 text-white cartoon-border cartoon-shadow py-4 rounded-2xl font-black text-sm hover:scale-105 active:scale-95 transition-transform flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isGeneratingSummary ? <Loader2 className="animate-spin" size={20} /> : <Wand2 size={20} />}
+              خلاصة ذكية
+            </button>
+          </div>
         </div>
 
         <section className="space-y-4">
-          <h3 className="text-xl font-black">أحدث التقييمات</h3>
+          <h3 className="text-xl font-black flex items-center gap-2"><Sparkles className="text-yellow-500" /> أحدث التقييمات</h3>
           {userRatings.length === 0 ? (
-            <div className="text-center p-8 bg-white/50 rounded-3xl border-2 border-dashed border-gray-400">لا يوجد تقييمات حتى الآن.</div>
+            <div className="text-center p-8 bg-white/50 rounded-3xl border-2 border-dashed border-gray-400 font-bold opacity-60">
+               لا يوجد تقييمات، كن أول من يقيّمه! ✨
+            </div>
           ) : (
             userRatings.sort((a,b) => b.createdAt - a.createdAt).map(rating => (
               <div key={rating.id} className="bg-white cartoon-border cartoon-shadow p-4 rounded-2xl">
@@ -397,34 +453,17 @@ const App: React.FC = () => {
             ))}
           </div>
         </section>
-
-        <section className="space-y-4">
-          <h2 className="text-xl font-black">إدارة التقييمات ({ratings.length})</h2>
-          <div className="space-y-3">
-            {ratings.length > 0 ? ratings.sort((a,b) => b.createdAt - a.createdAt).slice(0, 10).map(r => (
-              <div key={r.id} className="bg-white cartoon-border p-3 rounded-xl flex items-center gap-3">
-                <div className={`w-3 h-3 rounded-full border border-black ${CATEGORY_COLORS[r.category]}`}></div>
-                <div className="flex-1 overflow-hidden">
-                  <p className="text-xs font-bold truncate">"{r.content}"</p>
-                  <p className="text-[10px] text-gray-400">إلى: {users.find(u => u.id === r.toUserId)?.name || 'محذوف'}</p>
-                </div>
-                <button onClick={() => deleteRating(r.id)} className="text-red-500"><Trash2 size={14} /></button>
-              </div>
-            )) : <p className="text-center text-gray-400 font-bold py-4">لا توجد تقييمات لإدارتها</p>}
-            {ratings.length > 10 && <p className="text-center text-[10px] font-bold text-gray-400">يظهر أحدث 10 تقييمات فقط</p>}
-          </div>
-        </section>
         
         <button 
           onClick={() => {
-            if (window.confirm('سيتم حذف كل البيانات المخصصة والعودة للإعدادات الأولية. هل أنت متأكد؟')) {
+            if (window.confirm('سيتم حذف كل البيانات والعودة للبداية. استمرار؟')) {
               localStorage.clear();
               window.location.reload();
             }
           }}
           className="w-full bg-red-600 text-white cartoon-border py-4 rounded-2xl font-black text-sm"
         >
-          فرمتة التطبيق بالكامل (Reset) 🧨
+          فرمتة التطبيق بالكامل 🧨
         </button>
       </div>
     );
@@ -441,7 +480,7 @@ const App: React.FC = () => {
       <Navbar onNavigate={setCurrentPage} currentPage={currentPage} />
 
       {isRatingModalOpen && activeRatingTarget && (
-        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center p-4 z-[100]">
+        <div className="fixed inset-0 bg-black/70 flex items-end sm:items-center justify-center p-4 z-[100] animate-in fade-in">
           <div className="bg-white w-full max-w-sm cartoon-border cartoon-shadow rounded-t-3xl sm:rounded-3xl p-6">
             <h2 className="text-2xl font-black mb-4">تقييم {activeRatingTarget.name}</h2>
             <div className="space-y-4">
@@ -458,11 +497,11 @@ const App: React.FC = () => {
               </div>
               <textarea 
                 id="rating-text" 
-                className="w-full cartoon-border rounded-2xl p-4 text-lg font-bold min-h-[120px]" 
-                placeholder="اكتب ملاحظتك..."
+                className="w-full cartoon-border rounded-2xl p-4 text-lg font-bold min-h-[120px] focus:outline-none focus:ring-2 focus:ring-yellow-400" 
+                placeholder="اكتب ملاحظتك بصراحة..."
               ></textarea>
-              <div className="flex items-center gap-2 font-bold">
-                <input type="checkbox" id="is-secret" className="w-6 h-6 border-2 border-black" />
+              <div className="flex items-center gap-2 font-bold cursor-pointer">
+                <input type="checkbox" id="is-secret" className="w-6 h-6 border-2 border-black rounded-md" />
                 <label htmlFor="is-secret">تقييم سري؟ 🕵️</label>
               </div>
               <div className="flex gap-2">
@@ -474,9 +513,9 @@ const App: React.FC = () => {
                     const cat = (activeRatingTarget as any).selectedCategory || 'PRO';
                     if (text.trim()) submitRating(cat, text, secret);
                   }} 
-                  className="flex-[2] bg-blue-500 text-white py-3 rounded-2xl font-black cartoon-border"
+                  className="flex-[2] bg-blue-500 text-white py-3 rounded-2xl font-black cartoon-border hover:bg-blue-600 active:translate-y-1"
                 >
-                  إرسال 🚀
+                  إرسال التقييم 🚀
                 </button>
               </div>
             </div>
